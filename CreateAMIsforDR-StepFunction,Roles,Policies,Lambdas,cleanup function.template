@@ -1,0 +1,511 @@
+{
+	"Description" : "Step Function state machine to create AMI for DR",
+    "Parameters": {
+        "SFStateMachineName": {
+			"Description" : "Name of the state machine",
+			"Type": "String",
+			"Default" : "CreateAMIsforDR"
+		},
+        "BucketName": {
+            "Description": "Name of bucket where functions reside",
+			"Type": "String",
+			"AllowedPattern" : ".+"
+        },
+        "KeyPathStep1": {
+            "Description": "Key path for Step1",
+            "Type": "String",
+            "Default": "CreateAMIforDR-Step1.zip"
+        },
+        "KeyPathStep2": {
+            "Description": "Key path for Step2",
+            "Type": "String",
+            "Default": "CreateAMIforDR-Step2.zip"
+        },
+        "KeyPathStep3": {
+            "Description": "Key path for Step3",
+            "Type": "String",
+            "Default": "CreateAMIforDR-Step3.zip"
+		},
+		"KeyPathCleanAMIs":{
+			"Description": "Key path for CleanAMIs function",
+            "Type": "String",
+            "Default": "CleanAMIs.zip"
+		},
+        "StepFunctionSchedule": {
+            "Description": "Cron expresion for CloudWatch Event Rule - StepFunction.",
+            "Type": "String",
+            "Default": "cron(0 5 * * ? *)"
+		},
+        "CleanAMISchedule": {
+            "Description": "Cron expresion for CloudWatch Event Rule - CleanAMI.",
+            "Type": "String",
+            "Default": "cron(0 8 * * ? *)"
+		}
+    },
+    "Resources": {
+
+
+        "IAMRoleStep1": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version" : "2012-10-17",
+					"Statement": [ {
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "lambda.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					} ] 
+				},
+				"ManagedPolicyArns": [ 
+					"arn:aws:iam::aws:policy/AmazonS3FullAccess",
+					"arn:aws:iam::aws:policy/AWSLambdaFullAccess",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaRole",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess"
+					],
+				"RoleName": "CreateAMIforDRLambda-Step1"
+			}
+		},
+		"IAMPolicyStep1": {
+			"DependsOn": "IAMRoleStep1",
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : { 
+				"PolicyName" : "CreateAMIforDRLambda-Step1",
+				"PolicyDocument" : 
+					{
+						"Version": "2012-10-17",
+						"Statement": [
+							{
+								"Effect": "Allow",
+								"Action": [
+                                    "ec2:DescribeInstances",
+                                    "ec2:CopyImage",
+                                    "ec2:CreateImage",
+                                    "ec2:CreateTags",
+                                    "ec2:DescribeTags",
+                                    "ec2:DeleteTags",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents"								
+								],
+								"Resource": "*"
+							},
+							{
+								"Effect": "Allow",
+								"Action": "states:*",
+								"Resource": [
+									"arn:aws:states:*:*:activity:*",
+									"arn:aws:states:*:*:execution:*:*",
+									"arn:aws:states:*:*:stateMachine:*"
+								]
+							}
+						]
+					},
+				"Roles" : [ { "Ref" : "IAMRoleStep1" } ]
+			}
+		},
+		"LambdaStep1": {
+			"DependsOn": "IAMRoleStep1",
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"FunctionName": "CreateAMIforDRLambda-Step1",
+				"Description": "Step Function - Step 1: Fetches total count and information from instances with tag:Environment value:Production or Management.",
+				"Role": { "Fn::GetAtt" : ["IAMRoleStep1", "Arn"] },
+				"Runtime": "python3.6",
+				"Handler": "lambda_function.lambda_handler",
+				"Code": {
+					"S3Bucket": { "Ref" : "BucketName" },
+                    "S3Key":{"Ref" :"KeyPathStep1"}
+                    },
+				"Timeout": "300",
+				"Tags": [
+					{ "Key": "Name", "Value": "CreateAMIforDRLambda-Step1"}
+				]
+			}
+		},
+		
+
+        "IAMRoleStep2": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version" : "2012-10-17",
+					"Statement": [ {
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "lambda.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					} ] 
+				},
+				"ManagedPolicyArns": [ 
+					"arn:aws:iam::aws:policy/AmazonS3FullAccess",
+					"arn:aws:iam::aws:policy/AWSLambdaFullAccess",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaRole",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess"
+					],
+				"RoleName": "CreateAMIforDRLambda-Step2"
+			}
+		},
+		"IAMPolicyStep2": {
+			"DependsOn": "IAMRoleStep2",
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : { 
+				"PolicyName" : "CreateAMIforDRLambda-Step2",
+				"PolicyDocument" : 
+					{
+						"Version": "2012-10-17",
+						"Statement": [
+							{
+								"Effect": "Allow",
+								"Action": [
+                                    "ec2:DescribeInstances",
+                                    "ec2:CopyImage",
+                                    "ec2:CreateImage",
+                                    "ec2:CreateTags",
+                                    "ec2:DescribeTags",
+                                    "ec2:DeleteTags",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents"									
+								],
+								"Resource": "*"
+							}						
+						]
+					},
+				"Roles" : [ { "Ref" : "IAMRoleStep2" } ]
+			}
+		},
+		"LambdaStep2": {
+			"DependsOn": "IAMRoleStep2",
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"FunctionName": "CreateAMIforDRLambda-Step2",
+				"Description": "Step Function - Step 2: Creates AMI from instances with tag:Environment value:Production or Management.",
+				"Role": { "Fn::GetAtt" : ["IAMRoleStep2", "Arn"] },
+				"Runtime": "python3.6",
+				"Handler": "lambda_function.lambda_handler",
+				"Code": {
+					"S3Bucket": { "Ref" : "BucketName" },
+					"S3Key": {"Ref" :"KeyPathStep2"}
+					},
+				"Timeout": "300",
+				"Tags": [
+					{ "Key": "Name", "Value": "CreateAMIforDRLambda-Step2"}
+				]
+			}
+        },
+        "IAMRoleStep3": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version" : "2012-10-17",
+					"Statement": [ {
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "lambda.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					} ] 
+				},
+				"ManagedPolicyArns": [ 
+					"arn:aws:iam::aws:policy/AmazonS3FullAccess",
+					"arn:aws:iam::aws:policy/AWSLambdaFullAccess",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaRole",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess"
+					],
+				"RoleName": "CreateAMIforDRLambda-Step3"
+			}
+		},
+		"IAMPolicyStep3": {
+			"DependsOn": "IAMRoleStep3",
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : { 
+				"PolicyName" : "AMILambda-Step1b",
+				"PolicyDocument" : 
+					{
+						"Version": "2012-10-17",
+						"Statement": [
+							{
+								"Effect": "Allow",
+								"Action": [
+									"ec2:DescribeInstances",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents"									
+								],
+								"Resource": "*"
+							}						
+						]
+					},
+				"Roles" : [ { "Ref" : "IAMRoleStep3" } ]
+			}
+		},
+		"LambdaStep3": {
+			"DependsOn": "IAMRoleStep3",
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"FunctionName": "CreateAMIforDRLambda-Step3",
+				"Description": "Step Function - Step 3: Compares total AMIS with initial count.",
+				"Role": { "Fn::GetAtt" : ["IAMRoleStep3", "Arn"] },
+				"Runtime": "python3.6",
+				"Handler": "lambda_function.lambda_handler",
+				"Code": {
+					"S3Bucket": { "Ref" : "BucketName" },
+					"S3Key": {"Ref" :"KeyPathStep3"}
+					},
+				"Timeout": "300",
+				"Tags": [
+					{ "Key": "Name", "Value": "CreateAMIforDRLambda-Step3"}
+				]
+			}
+        },
+	    "StatesExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    {
+                                        "Fn::Sub": "states.${AWS::Region}.amazonaws.com"
+                                    }
+                                ]
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "StatesExecutionPolicy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "lambda:InvokeFunction"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "MyStateMachine": {
+            "Type": "AWS::StepFunctions::StateMachine",
+            "Properties": {
+				"StateMachineName": { "Ref" : "SFStateMachineName" },
+                "DefinitionString": {
+					"Fn::Join": [
+						"",
+						[
+                            "{\n",
+                            "    \"StartAt\": \"Step1-FetchData\", \n",
+                            "    \"States\" : { \n",
+                            "        \"Step1-FetchData\" : { \n",
+                            "            \"Type\" : \"Task\", \n",
+                            "            \"Resource\" : \"",{ "Fn::GetAtt": ["LambdaStep1", "Arn"] },"\", \n",
+                            "            \"Next\" : \"Step2-CreateImage\"\n",
+                            "        },\n",
+                            "        \"Step2-CreateImage\" : {\n",
+                            "           \"Type\" : \"Task\",\n", 
+                            "           \"Resource\" : \"",{ "Fn::GetAtt": ["LambdaStep2", "Arn"] },"\", \n",
+                            "           \"Next\" : \"Is_Process_Done?\"\n",
+                            "        },\n",
+                            "        \"Is_Process_Done?\": {\n",
+                            "        \"Type\" : \"Choice\",\n",
+                            "        \"Choices\": [\n",
+                            "          {\n",
+                            "           \"Variable\": \"$[2]\",\n",
+                            "           \"NumericEquals\": 0,\n",
+                            "           \"Next\": \"Step2-CreateImage\"\n",
+                            "          },\n",
+                            "          {\n",
+                            "            \"Variable\": \"$[2]\",\n",
+                            "            \"NumericEquals\": 1,\n",
+                            "            \"Next\": \"End\"\n",
+                            "          }\n",
+                            "        ]\n",
+                            "      },\n",
+                            "        \"End\" : {\n",
+                            "           \"Type\" : \"Task\",\n",
+                            "           \"Resource\" : \"",{ "Fn::GetAtt": ["LambdaStep3", "Arn"] },"\", \n",
+                            "           \"End\" : true\n",
+                            "        }\n",
+                            "    }\n",
+                            "}\n"
+						]
+					]
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "StatesExecutionRole",
+                        "Arn"
+                    ]
+                }
+            }
+		},
+		"IAMRoleEvent": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version" : "2012-10-17",
+					"Statement": [ {
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "events.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					} ] 
+				},
+				"ManagedPolicyArns": [ 
+					"arn:aws:iam::aws:policy/AWSLambdaFullAccess",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaRole",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess"
+					],
+				"RoleName": "CreateAMIforDR-CWEvent-Rule"
+			}
+		},
+		"DailyRunAMIforDR": {
+			"DependsOn": "IAMRoleStep3",
+			"Type": "AWS::Events::Rule",
+			"Properties": {
+			  "Description": "Runs daily at 1am to create AMIs for Management and Producton Env",
+			  "ScheduleExpression": { "Ref": "StepFunctionSchedule" },
+			  "State": "ENABLED",
+			  "Targets": [{
+				"Arn": { "Ref": "MyStateMachine" },
+				"Id": "CreateAMIsforDR-StepFunction",
+				"RoleArn": {"Fn::GetAtt" : ["IAMRoleEvent", "Arn"] }
+			  }]
+			}
+		  },
+
+		  "IAMRoleCleanAMIs": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version" : "2012-10-17",
+					"Statement": [ {
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "lambda.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					} ] 
+				},
+				"ManagedPolicyArns": [ 
+					"arn:aws:iam::aws:policy/AmazonS3FullAccess",
+					"arn:aws:iam::aws:policy/AWSLambdaFullAccess",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaRole",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess"
+					],
+				"RoleName": "CreateAMIforDRLambda-CleanAMIs"
+			}
+		},
+		"IAMPolicyCleanAMIs": {
+			"DependsOn": "IAMRoleCleanAMIs",
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : { 
+				"PolicyName" : "CreateAMIforDRLambda-CleanAMIs",
+				"PolicyDocument" : 
+					{
+						"Version": "2012-10-17",
+						"Statement": [
+							{
+								"Effect": "Allow",
+								"Action": [
+                                    "ec2:DescribeInstances",
+                                    "ec2:CopyImage",
+                                    "ec2:CreateImage",
+                                    "ec2:CreateTags",
+                                    "ec2:DescribeTags",
+									"ec2:DeleteTags",
+									"ec2:TerminateInstances",
+									"ec2:DeregisterImage ",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents"								
+								],
+								"Resource": "*"
+							}
+						]
+					},
+				"Roles" : [ { "Ref" : "IAMRoleCleanAMIs" } ]
+			}
+		},
+		"LambdaCleanAMIs": {
+			"DependsOn": "IAMRoleCleanAMIs",
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"FunctionName": "CleanAMIs",
+				"Description": "Clean up Function - Part of Step functions that cleans up daily AMIs",
+				"Role": { "Fn::GetAtt" : ["IAMRoleCleanAMIs", "Arn"] },
+				"Runtime": "python3.6",
+				"Handler": "lambda_function.lambda_handler",
+				"Code": {
+					"S3Bucket": { "Ref" : "BucketName" },
+                    "S3Key":{"Ref" :"KeyPathCleanAMIs"}
+                    },
+				"Timeout": "300",
+				"Tags": [
+					{ "Key": "Name", "Value": "CleanAMIs"}
+				]
+			}
+		},
+	"DailyRunAMIforCleanAMIs": {
+		"DependsOn": "LambdaCleanAMIs",
+		"Type": "AWS::Events::Rule",
+		"Properties": {
+		  "Description": "Runs daily at 4am EST",
+		  "ScheduleExpression": { "Ref": "CleanAMISchedule" },
+		  "State": "ENABLED",
+		  "Targets": [{
+			"Arn": {"Fn::GetAtt": ["LambdaCleanAMIs","Arn"]},
+			"Id": "CreateAMIsforDR-CleanAMIs"
+		  }]
+		}
+	  },
+	  "PermissionForEventsToInvokeLambda": {
+		"Type": "AWS::Lambda::Permission",
+		"Properties": {
+		  "FunctionName": { "Ref": "LambdaCleanAMIs" },
+		  "Action": "lambda:InvokeFunction",
+		  "Principal": "events.amazonaws.com",
+		  "SourceArn": { "Fn::GetAtt": ["DailyRunAMIforCleanAMIs", "Arn"] }
+		}
+	  }
+	},  
+	"Outputs" : {
+		"LambdaStep1ARN" : {
+			"Description" : "ARN of the newly created Lambda function",
+			"Value" : { "Fn::GetAtt": ["LambdaStep1", "Arn"] },
+			"Export" : { "Name" : {"Fn::Sub": "${AWS::StackName}-LambdaStep1ARN" }}
+		},
+		"LambdaStep2ARN" : {
+			"Description" : "ARN of the newly created Lambda function",
+			"Value" : { "Fn::GetAtt": ["LambdaStep2", "Arn"] },
+			"Export" : { "Name" : {"Fn::Sub": "${AWS::StackName}-LambdaStep2ARN" }}
+		},
+		"LambdaStep3ARN" : {
+			"Description" : "ARN of the newly created Lambda function",
+			"Value" : { "Fn::GetAtt": ["LambdaStep3", "Arn"] },
+			"Export" : { "Name" : {"Fn::Sub": "${AWS::StackName}-LambdaStep3ARN" }}
+		}			
+	}
+}
