@@ -11,12 +11,11 @@ import datetime
 import time
 import sys
 
-#specify the region in which EC2 Instances located and to cleanup AMI's. 
 source_region = 'us-east-1'
-#s = boto3.Session(profile_name = 'VertexSMB')
 ec = boto3.client('ec2', source_region)
 ec2 = boto3.resource('ec2', source_region)
-images = ec2.images.filter(Owners=["409148389496"])# Specify your AWS account owner id in place of "XXXXX" at all the places in this script
+accountid = boto3.client('sts').get_caller_identity().get('Account')
+images = ec2.images.filter(Owners=[str(accountid)])
 
 def lambda_handler(event, context):
 
@@ -58,13 +57,8 @@ def lambda_handler(event, context):
             # Our other Lambda Function names its AMIs Lambda - Instance Name.
             # We now know these images are auto created
             if image.name.startswith('Lambda - ' + [result['Value'] for result in instance['Tags'] if result['Key'] == 'Name'][0]):
-            #if image.name.startswith('Lambda ec2 tag - ' + [result['Value'] for result in instance['Tags'] if result['Key'] == 'Name'][0]):
-
-                #print "FOUND IMAGE " + image.id + " FOR INSTANCE " + instance['InstanceId']
-
                 # Count this image's occcurance
                 imagecount = imagecount + 1
-
                 try:
                     if image.tags is not None:
                         deletion_date = [
@@ -77,10 +71,8 @@ def lambda_handler(event, context):
                     delete_date = False
 
                 today_time = datetime.datetime.now().strftime('%d-%m-%Y')
-                # today_fmt = today_time.strftime('%m-%d-%Y')
                 today_date = time.strptime(today_time, '%d-%m-%Y')
 
-                
                 # If image's DeleteOn date is less than or equal to today,
                 # add this image to our list of images to process later
                 if delete_date != False and delete_date <= today_date:
@@ -98,7 +90,6 @@ def lambda_handler(event, context):
         print ("instance " + instance['InstanceId'] + " has " + str(imagecount) + " AMIs")
 
     print ("=============")
-
     print ("About to process the following AMIs:")
     print (imagesList)
 
@@ -108,16 +99,11 @@ def lambda_handler(event, context):
         
         for image in imagesList:
             #print image
-            desc_image_snapshots = ec.describe_images(ImageIds=[image],Owners=['409148389496',])['Images'][0]['BlockDeviceMappings']
-            # print (desc_image_snapshots)
+            desc_image_snapshots = ec.describe_images(ImageIds=[image],Owners=[str(accountid),])['Images'][0]['BlockDeviceMappings']
             try:
                 for desc_image_snapshot in desc_image_snapshots:
-                    snapshot = ec.describe_snapshots(SnapshotIds=[desc_image_snapshot['Ebs']['SnapshotId'],], OwnerIds=['409148389496'])['Snapshots'][0]
-                    #if snapshot['Description'].find(image) > 0:
+                    snapshot = ec.describe_snapshots(SnapshotIds=[desc_image_snapshot['Ebs']['SnapshotId'],], OwnerIds=[str(accountid)])['Snapshots'][0]
                     snapshotList.append(snapshot['SnapshotId'])
-                    #else:
-                    #   continue
-                    #     print "Snapshot is not associated with an AMI"
                     
             except Exception as e:
                 print ("Ignore Index Error:%s" % e) #e.message
