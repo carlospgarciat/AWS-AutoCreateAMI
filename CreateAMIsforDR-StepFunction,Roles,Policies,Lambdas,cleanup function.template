@@ -435,6 +435,7 @@
 									"ec2:DeleteTags",
 									"ec2:TerminateInstances",
 									"ec2:DeregisterImage ",
+									"ec2:DescribeImages",
 									"logs:CreateLogGroup",
 									"logs:CreateLogStream",
 									"logs:PutLogEvents",
