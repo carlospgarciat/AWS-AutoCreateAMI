@@ -22,9 +22,9 @@ def lambda_handler(event, context):
     print(str(currenttime), "::", "Instance Tags:", (instanceTags))
     
    
-    # While loop compares the total count of instances found with the filter to the total number of iterations of itself.
+    # For loop compares the total count of instances found with the filter to the total number of iterations.
     # the iteration serves as an index indicator to go through the instance list until the condition is met.
-    while iterations < totalInstances:
+    for iterations < totalInstances:
         to_tag = collections.defaultdict(list)
         instId = instanceIds[iterations]
 
