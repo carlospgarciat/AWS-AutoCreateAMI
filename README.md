@@ -11,7 +11,7 @@ AWS CloudFormation template that deploys:
 
 CloudFormation parameter for cron job dictates how often this StepFunction runs.
 
-##Use:
+## Use:
 1) Compress and rename the compressed file as "lambda_function"
 2) Upload each zip file with renamed file to the designated bucket
 3) Deploy the CloudFormation template
