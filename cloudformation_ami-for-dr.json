@@ -1,0 +1,374 @@
+{
+	"Description" : "Step Function state machine to create AMI for DR",
+    "Parameters": {
+        "SFStateMachineName": {
+			"Description" : "Name of the state machine",
+			"Type": "String",
+			"Default" : "CreateAMIsforDR"
+		},
+        "BucketName": {
+            "Description": "Name of bucket where functions reside",
+			"Type": "String",
+			"AllowedPattern" : ".+"
+        },
+        "KeyPathCreateAMIFn": {
+            "Description": "Key path for LambdaFunction",
+            "Type": "String",
+            "Default": "CreateAMIforDR.zip"
+        },
+		"KeyPathCleanAMIs":{
+			"Description": "Key path for CleanAMIs function",
+            "Type": "String",
+            "Default": "CleanAMIs.zip"
+		},
+        "StepFunctionSchedule": {
+            "Description": "Cron expresion for CloudWatch Event Rule - StepFunction.",
+            "Type": "String",
+            "Default": "cron(0 5 * * ? *)"
+		},
+        "CleanAMISchedule": {
+            "Description": "Cron expresion for CloudWatch Event Rule - CleanAMI.",
+            "Type": "String",
+            "Default": "cron(0 8 * * ? *)"
+		}
+    },
+    "Resources": {
+        "IAMRoleCreateAMI": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version" : "2012-10-17",
+					"Statement": [ {
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "lambda.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					} ] 
+				},
+				"ManagedPolicyArns": [ 
+					"arn:aws:iam::aws:policy/AmazonS3FullAccess",
+					"arn:aws:iam::aws:policy/AWSLambdaFullAccess",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaRole",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess"
+					],
+				"RoleName": "CreateAMIforDRLambda"
+			}
+		},
+		"IAMPolicyCreateAMI": {
+			"DependsOn": "IAMRoleCreateAMI",
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : { 
+				"PolicyName" : "CreateAMIforDRLambda",
+				"PolicyDocument" : 
+					{
+						"Version": "2012-10-17",
+						"Statement": [
+							{
+								"Effect": "Allow",
+								"Action": [
+                                    "ec2:DescribeInstances",
+                                    "ec2:CopyImage",
+                                    "ec2:CreateImage",
+                                    "ec2:CreateTags",
+                                    "ec2:DescribeTags",
+                                    "ec2:DeleteTags",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents"								
+								],
+								"Resource": "*"
+							},
+							{
+								"Effect": "Allow",
+								"Action": "states:*",
+								"Resource": [
+									"arn:aws:states:*:*:activity:*",
+									"arn:aws:states:*:*:execution:*:*",
+									"arn:aws:states:*:*:stateMachine:*"
+								]
+							}
+						]
+					},
+				"Roles" : [ { "Ref" : "IAMRoleCreateAMI" } ]
+			}
+		},
+		"LambdaCreateAMI": {
+			"DependsOn": "IAMRoleCreateAMI",
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"FunctionName": "CreateAMIforDRLambda",
+				"Description": "Step Function - CreateAMI for DR.",
+				"Role": { "Fn::GetAtt" : ["IAMRoleStep1", "Arn"] },
+				"Runtime": "python3.6",
+				"Handler": "lambda_function.lambda_handler",
+				"Code": {
+					"S3Bucket": { "Ref" : "BucketName" },
+                    "S3Key":{"Ref" :"KeyPathCreateAMIFn"}
+                    },
+				"Timeout": "300",
+				"Tags": [
+                    { "Key": "Name", "Value": "CreateAMIforDR"},
+                    {"Key": "StackName", "Value": {"Ref": "AWS::StackName"}}
+				]
+			}
+		},
+		
+	    "StatesExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    {
+                                        "Fn::Sub": "states.${AWS::Region}.amazonaws.com"
+                                    }
+                                ]
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "StatesExecutionPolicy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+										"states:StartExecution",
+										"lambda:InvokeFunction"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "StateMachineCreateAMI": {
+            "Type": "AWS::StepFunctions::StateMachine",
+            "Properties": {
+				"StateMachineName": { "Ref" : "SFStateMachineName" },
+                "DefinitionString": {
+					"Fn::Join": [
+						"",
+						[
+                            "{\n",
+                            "    \"StartAt\": \"CreateAMI\", \n",
+                            "    \"States\" : { \n",
+                            "        \"CreateAMI\" : { \n",
+                            "            \"Type\" : \"Task\", \n",
+                            "            \"Resource\" : \"",{ "Fn::GetAtt": ["LambdaCreateAMI", "Arn"] },"\", \n",
+                            "            \"Retry\" : [\n",
+                            "             {\n",
+                            "               \"ErrorEquals\" : [\n",
+                            "               \"AmiException\"\n",
+                            "               ],\n",
+                            "             \"IntervalSeconds\" : 300, \n",
+                            "             \"MaxAttempts\" : 20, \n",
+                            "             \"BackoffRate\" : 1 \n",
+                            "           }\n",
+                            "        ],\n",
+                            "       \"End\" : true\n",
+                            "        }\n",
+                            "    }\n",
+                            "}\n"
+						]
+					]
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "StatesExecutionRole",
+                        "Arn"
+                    ]
+                }
+            }
+		},
+		"IAMRoleEvent": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version" : "2012-10-17",
+					"Statement": [ {
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "events.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					} ] 
+				},
+				"ManagedPolicyArns": [ 
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaRole",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess"
+					],
+				"RoleName": "CreateAMIforDR-CWEvent-Rule"
+			}
+		},
+		"IAMPolicyEvent": {
+			"DependsOn": "IAMRoleEvent",
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : { 
+				"PolicyName" : "Policy-CWEventforCreateAMIforDR",
+				"PolicyDocument" : 
+					{
+						"Version": "2012-10-17",
+						"Statement": [
+							{
+								"Effect": "Allow",
+								"Action": [
+									"states:StartExecution",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents"									
+								],
+								"Resource": "*"
+							}						
+						]
+					},
+				"Roles" : [ { "Ref" : "IAMRoleEvent" } ]
+			}
+		},
+		"DailyRunAMIforDR": {
+			"DependsOn": "IAMRoleStep3",
+			"Type": "AWS::Events::Rule",
+			"Properties": {
+			  "Description": "Runs to create AMIs for the designated environments",
+			  "ScheduleExpression": { "Ref": "StepFunctionSchedule" },
+			  "State": "ENABLED",
+			  "Targets": [{
+				"Arn": { "Ref": "StateMachineCreateAMI" },
+				"Id": "CreateAMIsforDR-StepFunction",
+				"RoleArn": {"Fn::GetAtt" : ["IAMRoleEvent", "Arn"] }
+			  }]
+			}
+		  },
+
+		  "IAMRoleCleanAMIs": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version" : "2012-10-17",
+					"Statement": [ {
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "lambda.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					} ] 
+				},
+				"ManagedPolicyArns": [ 
+					"arn:aws:iam::aws:policy/AmazonS3FullAccess",
+					"arn:aws:iam::aws:policy/AWSLambdaFullAccess",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaRole",
+					"arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess"
+					],
+				"RoleName": "CreateAMIforDRLambda-CleanAMIs"
+			}
+		},
+		"IAMPolicyCleanAMIs": {
+			"DependsOn": "IAMRoleCleanAMIs",
+			"Type" : "AWS::IAM::Policy",
+			"Properties" : { 
+				"PolicyName" : "CreateAMIforDRLambda-CleanAMIs",
+				"PolicyDocument" : 
+					{
+						"Version": "2012-10-17",
+						"Statement": [
+							{
+								"Effect": "Allow",
+								"Action": [
+                                    "ec2:DescribeInstances",
+                                    "ec2:CopyImage",
+                                    "ec2:CreateImage",
+                                    "ec2:CreateTags",
+                                    "ec2:DescribeTags",
+									"ec2:DeleteTags",
+									"ec2:TerminateInstances",
+									"ec2:DeregisterImage",
+									"ec2:DescribeImages",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents",
+									"logs:CreateLogGroup",
+									"logs:CreateLogStream",
+									"logs:PutLogEvents"								
+								],
+								"Resource": "*"
+							}
+						]
+					},
+				"Roles" : [ { "Ref" : "IAMRoleCleanAMIs" } ]
+			}
+		},
+		"LambdaCleanAMIs": {
+			"DependsOn": "IAMRoleCleanAMIs",
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"FunctionName": "CleanAMIs",
+				"Description": "Clean up Function - Part of Step functions that cleans up daily AMIs",
+				"Role": { "Fn::GetAtt" : ["IAMRoleCleanAMIs", "Arn"] },
+				"Runtime": "python3.6",
+				"Handler": "lambda_function.lambda_handler",
+				"Code": {
+					"S3Bucket": { "Ref" : "BucketName" },
+                    "S3Key":{"Ref" :"KeyPathCleanAMIs"}
+                    },
+				"Timeout": "300",
+				"Tags": [
+					{ "Key": "Name", "Value": "CleanAMIs"}
+				]
+			}
+		},
+	"DailyRunAMIforCleanAMIs": {
+		"DependsOn": "LambdaCleanAMIs",
+		"Type": "AWS::Events::Rule",
+		"Properties": {
+		  "Description": "Runs daily at 4am EST",
+		  "ScheduleExpression": { "Ref": "CleanAMISchedule" },
+		  "State": "ENABLED",
+		  "Targets": [{
+			"Arn": {"Fn::GetAtt": ["LambdaCleanAMIs","Arn"]},
+			"Id": "CreateAMIsforDR-CleanAMIs"
+		  }]
+		}
+	  },
+	  "PermissionForEventsToInvokeLambda": {
+		"Type": "AWS::Lambda::Permission",
+		"Properties": {
+		  "FunctionName": { "Ref": "LambdaCleanAMIs" },
+		  "Action": "lambda:InvokeFunction",
+		  "Principal": "events.amazonaws.com",
+		  "SourceArn": { "Fn::GetAtt": ["DailyRunAMIforCleanAMIs", "Arn"] }
+		}
+	  }
+	},  
+	"Outputs" : {
+		"LambdaStep1ARN" : {
+			"Description" : "ARN of the newly created Lambda function",
+			"Value" : { "Fn::GetAtt": ["LambdaStep1", "Arn"] },
+			"Export" : { "Name" : {"Fn::Sub": "${AWS::StackName}-LambdaStep1ARN" }}
+		},
+		"LambdaStep2ARN" : {
+			"Description" : "ARN of the newly created Lambda function",
+			"Value" : { "Fn::GetAtt": ["LambdaStep2", "Arn"] },
+			"Export" : { "Name" : {"Fn::Sub": "${AWS::StackName}-LambdaStep2ARN" }}
+		},
+		"LambdaStep3ARN" : {
+			"Description" : "ARN of the newly created Lambda function",
+			"Value" : { "Fn::GetAtt": ["LambdaStep3", "Arn"] },
+			"Export" : { "Name" : {"Fn::Sub": "${AWS::StackName}-LambdaStep3ARN" }}
+		}			
+	}
+}
