@@ -12,6 +12,7 @@ class AmiException(Exception):
 def lambda_handler(event, context):
     ##
     currenttime = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
+    instName = ""
     instanceTags = []
     instanceIds = []
     iterations = 0 
@@ -25,6 +26,7 @@ def lambda_handler(event, context):
     for page in response_iterator:
         for item in page.get('Reservations'):
             response.append(item)
+    
     
     ##
     instances = sum([[i for i in r['Instances']]for r in response], [])
@@ -41,12 +43,12 @@ def lambda_handler(event, context):
         instId = instanceIds[iterations]
 
         ##
+        ami_tags = []
         for t in instanceTags[iterations]:
-            if t['Key'] == 'Name':
-                instName = t['Value']
-            else:
-                instName = " "
-
+            if not t.get('Key').startswith('aws:'):
+                if t.get('Value') != '':
+                    if ":" not in t.get('Key'):
+                        ami_tags.append(t)
             #
             try:
                 retention_days = [
@@ -56,23 +58,29 @@ def lambda_handler(event, context):
                 retention_days = 7
             except ValueError:
                 retention_days = 7
+            except Exception as e:    
+                retention_days = 7
             finally:
                 create_time = datetime.datetime.now()
                 create_fmt = create_time.strftime('%m-%d-%Y.%H.%M.%S')
         ##
-        try: 
-            #
+        try:
+            for t in ami_tags:
+                if t.get('Key') == 'Name':
+                    instName = t['Value']
             print(str(currenttime), "::", "Creating AMI from: ", (instName))
-            ami_id = client.create_image(InstanceId=instId, Name="Lambda - " + instName + " - " + " From " + create_fmt + " - " + instId, Description="Lambda created AMI of instance " + instId)
+            ami_id = client.create_image(InstanceId=instId, Name="Lambda - " + instName + " - " + " From " + create_fmt + " - " + instId, Description="Lambda created AMI of instance " + instId, NoReboot=TRUE)
             #
             print(str(currenttime), "::", ami_id)
             AMIID = ami_id['ImageId']
             to_tag[retention_days].append(AMIID)
             print(str(currenttime), "::", "Newly created AMI ", AMIID, "made from ", instId, "will complete in a few minutes...")
             #
+            print(str(currenttime), "::", "Adding tags to new AMI...")
+
             client.create_tags(
-            Resources=[AMIID],
-            Tags= instanceTags[iterations]
+            Resources=[ami_id['ImageId']],
+            Tags=ami_tags
             )
             #
             print ("Retaining AMI %s of instance %s for %d days" % (
@@ -86,14 +94,14 @@ def lambda_handler(event, context):
                 delete_date = datetime.date.today() + datetime.timedelta(days=retention_days)
                 delete_fmt = delete_date.strftime('%m-%d-%Y')
                 print ("Will delete %d AMIs on %s" % (len(to_tag[retention_days]), delete_fmt))
-                client.create_tags(Resources=to_tag[retention_days],Tags=[{'Key': 'DeleteOn', 'Value': delete_fmt},{'Key': 'Origin', 'Value': 'TestFn'}])
+                client.create_tags(Resources=to_tag[retention_days],Tags=[{'Key': 'DeleteOn', 'Value': delete_fmt},{'Key': 'Origin', 'Value': 'StepFn'}])
             #        
             iterations +=1
         except Exception as e:
             pending_backups += 1
         
         if pending_backups > 0:
-            log_message = 'Could not back up every instance.'
+            log_message = 'Could not back up every instance. Unexpected error, at instance: ' + instId
             raise AmiException(log_message)
 
 if __name__ == '__main__':
